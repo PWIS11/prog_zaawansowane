@@ -1,0 +1,334 @@
+---
+title: "Prognozowanie Syntetycznego Wskaźnika Rozwoju Sektora Energetycznego w Niemczech"
+author: "Izabela Reszka, Klaudia Woźniak, Piotr Wiśniewski"
+date: "today"
+format:
+  pdf:
+    toc: true                # Generuje spis treści
+    toc-title: "Spis treści" # Tytuł spisu treści
+    number-sections: true    # Numeruje rozdziały (np. 1. Wstęp)
+    lang: pl                 # Ustawia polskie kodowanie dla LaTeX
+---
+
+# 1. Wstęp
+
+Transformacja energetyczna, w Niemczech znana jako *Energiewende*, jest jednym z najbardziej złożonych procesów gospodarczych XXI wieku. Polega ona na fundamentalnej przebudowie sektora – odchodzeniu od paliw kopalnych i energetyki jądrowej na rzecz odnawialnych źródeł energii (OZE). Proces ten jest wielowymiarowy i nie da się go opisać za pomocą jednej zmiennej, takiej jak sama produkcja energii z wiatru czy cena giełdowa. Inwestorzy, analitycy oraz decydenci polityczni potrzebują zagregowanego, syntetycznego miernika, który – na wzór Produktu Krajowego Brutto dla gospodarki – pozwoli w jednej liczbie uchwycić ogólną kondycję i postęp tej transformacji.
+
+Celem niniejszego projektu jest zaprojektowanie, zbudowanie i prognozowanie takiego syntetycznego wskaźnika rozwoju dla niemieckiego sektora energetycznego. Analiza opiera się na publicznie dostępnych danych z europejskiej platformy ENTSO-E oraz niemieckiej platformy SMARD.
+
+Główne cele badawcze projektu są następujące:
+
+1.  Wybór i uzasadnienie kluczowych zmiennych diagnostycznych opisujących niemiecki rynek energii (m.in. udział OZE, ceny rynkowe, stabilność systemu).
+2.  Budowa trzech wariantów syntetycznego wskaźnika przy użyciu metod ważenia: równej wagi (EW), analizy składowych głównych (PCA) oraz metody wag entropowych (EWM).
+3.  Zaprojektowanie i testowanie dwóch fundamentalnie różnych podejść do prognozowania wskaźnika na okres dwóch lat.
+4.  Porównanie skuteczności obu strategii prognostycznych przy użyciu miar błędu ex-post, w tym RMSPE i współczynnika Theila.
+
+Praca przedstawia metodykę pozyskania i agregacji danych, konstrukcję wskaźników oraz szczegółową analizę porównawczą wyników prognoz, kończąc na wnioskach dla sektora.
+
+# 2. Źródła danych i Metodyka Badawcza
+
+Badanie opiera się na danych wtórnych pozyskanych z oficjalnych platform monitorujących europejski rynek energii. Proces badawczy obejmował ekstrakcję danych surowych, ich transformację (ETL), konstrukcję zmiennych diagnostycznych oraz budowę modeli prognostycznych.
+
+## 2.1. Charakterystyka źródeł danych
+
+Głównym źródłem danych jest **ENTSO-E Transparency Platform** (European Network of Transmission System Operators for Electricity). Jest to centralne repozytorium danych dla europejskiego rynku energii elektrycznej, funkcjonujące na mocy Rozporządzenia Komisji (UE) nr 543/2013. Platforma zapewnia dostęp do danych o generacji, obciążeniu i cenach w wysokiej rozdzielczości czasowej (15-60 minut).
+
+Jako źródło uzupełniające i weryfikacyjne wykorzystano platformę **SMARD**, prowadzoną przez niemieckiego regulatora (Bundesnetzagentur). SMARD agreguje dane z ENTSO-E, zapewniając ich walidację i przejrzystą strukturę dla rynku niemieckiego.
+
+Zakres czasowy badania obejmuje okres od **stycznia 2015 r.** (początek pełnego raportowania ENTSO-E) do **października 2025 r.**, co daje łącznie 130 obserwacji miesięcznych.
+
+## 2.2. Zmienne diagnostyczne
+
+Na podstawie literatury przedmiotu wyselekcjonowano zestaw 6 zmiennych diagnostycznych, opisujących kluczowe wymiary rozwoju sektora:
+
+1.  **Udział OZE (`res_share`):** Stosunek generacji ze źródeł odnawialnych (wiatr, słońce, woda, biomasa) do generacji całkowitej. Jest to stymulanta (wzrost oznacza postęp transformacji).
+2.  **Udział paliw kopalnych (`fossil_share`):** Stosunek generacji z węgla, gazu i ropy do generacji całkowitej.Jest to destymulanta (pożądany jest spadek).
+3.  **Cena rynkowa (`market_price`):** Średnia cena hurtowa energii elektrycznej na rynku dnia następnego (Day-Ahead Market) wyrażona w EUR/MWh. Traktowana jako destymulanta (wzrost ceny obniża konkurencyjność gospodarki).
+4.  **Zmienność cen (`price_volatility`):** Odchylenie standardowe cen godzinowych w danym miesiącu. Mierzy ryzyko rynkowe i niepewność (destymulanta).
+5.  **Całkowite zużycie (`energy_consumption`):** Sumaryczny wolumen energii zużytej w gospodarce (MWh). Wskaźnik skali rynku (stymulanta).
+6.  **Stabilność systemu (`system_stability`):** Mierzona jako średni procentowy błąd prognozy zapotrzebowania operatora (MAPE). Niższy błąd oznacza wyższą stabilność i przewidywalność systemu (destymulanta).
+
+## 2.3. Przygotowanie i agregacja danych (ETL)
+
+Proces przygotowania danych został zrealizowany w środowisku Python przy użyciu biblioteki `entsoe-py`. Kluczowe etapy obejmowały:
+
+* **Unifikacja stref cenowych:** Uwzględniono historyczny podział strefy cenowej DE-AT-LU (Niemcy-Austria-Luksemburg), który nastąpił 1 października 2018 r. Dane sprzed tej daty dla strefy połączonej zostały scalone z danymi dla strefy DE-LU (Niemcy-Luksemburg).
+* **Agregacja czasowa:** Dane surowe o granularności 15-minutowej (obciążenie) i godzinowej (ceny) zostały zagregowane do częstotliwości miesięcznej (`ME`). Zastosowano sumowanie dla wolumenów (MWh) oraz średnią dla cen i wskaźników procentowych.
+* **Flaga kryzysowa:** Utworzono binarną zmienną pomocniczą `crisis_flag`, przyjmującą wartość 1 dla okresów pandemii COVID-19 (03.2020–06.2021) oraz kryzysu energetycznego (09.2021–12.2023).
+
+## 2.4. Metody konstrukcji wskaźnika syntetycznego
+
+W celu zbudowania syntetycznego miernika rozwoju (SMR) zastosowano procedurę unitaryzacji zerowanej (standaryzacja Z-Score), sprowadzającą zmienne do porównywalności. Następnie obliczono trzy warianty wskaźnika:
+
+1.  **Metoda Równych Wag (EW):** Średnia arytmetyczna ze wszystkich unormowanych zmiennych. Zakłada jednakowy wpływ każdego czynnika na rozwój sektora.
+2.  **Analiza Składowych Głównych (PCA):** Metoda redukcji wymiaru, w której wagi wyznaczane są na podstawie ładunków pierwszej składowej głównej, wyjaśniającej największą część wariancji zbioru danych.
+3.  **Metoda Wag Entropowych (EWM):** Podejście obiektywne, w którym wagi zależą od stopnia nieuporządkowania informacji (entropii). Zmienne o większej zmienności otrzymują wyższe wagi, jako niosące więcej unikalnej informacji.
+
+## 2.5. Metodyka prognozowania
+
+Badanie porównuje dwie strategie prognostyczne dla horyzontu 24 miesięcy:
+* **Podejście bezpośrednie:** Prognozowanie finalnego indeksu syntetycznego.
+* **Podejście pośrednie (agregacja):** Prognozowanie każdego składnika z osobna, a następnie ich scalenie w indeks.
+
+Wykorzystano modele klasy **Holt-Winters** (wygładzanie wykładnicze z sezonowością) oraz **SARIMA** (Seasonal AutoRegressive Integrated Moving Average). Jakość prognoz oceniono ex-post na zbiorze testowym (ostatnie 24 miesiące) przy użyciu miar MAE (średni błąd bezwzględny), RMSE (pierwiastek błędu średniokwadratowego) oraz RMSPE (błąd procentowy).
+
+# 3. Analiza i Wyniki
+
+W niniejszym rozdziale przedstawiono wyniki analizy empirycznej. Proces badawczy podzielono na trzy etapy: wstępną eksplorację danych (EDA), konstrukcję wskaźników syntetycznych oraz modelowanie prognostyczne.
+
+## 3.1. Wstępna analiza danych (EDA)
+
+Pierwszym krokiem jest wczytanie przygotowanych danych miesięcznych oraz analiza ich podstawowych statystyk opisowych. Pozwala to na weryfikację poprawności danych oraz identyfikację ogólnych charakterystyk badanego okresu (2015–2025).
+
+```{python}
+#| label: wczytanie-i-statystyki
+#| echo: false
+#| warning: false
+#| message: false
+#| tbl-cap: "Statystyki opisowe zmiennych diagnostycznych (2015-2025)"
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+
+# Konfiguracja stylu
+plt.style.use('seaborn-v0_8-whitegrid')
+sns.set_context("paper")
+
+# --- WCZYTANIE DANYCH ---
+
+filename = "dane_miesieczne_DE.csv"
+folder = "dane_po_transformacji"
+path_in_folder = os.path.join(folder, filename)
+
+if os.path.exists(path_in_folder):
+    file_path = path_in_folder
+elif os.path.exists(filename):
+    file_path = filename
+else:
+    raise FileNotFoundError(f"Nie znaleziono pliku {filename}")
+
+df = pd.read_csv(file_path)
+# Parsowanie daty (format pełny z CSV)
+df['date_dt'] = pd.to_datetime(df['date'], utc=True)
+df = df.set_index('date_dt')
+
+diagnostic_vars = [
+    'res_share', 'fossil_share', 'market_price', 
+    'price_volatility', 'energy_consumption', 'system_stability'
+]
+
+# --- PRZYGOTOWANIE TABELI STATYSTYK ---
+df_display = df[diagnostic_vars].copy()
+
+# Konwersja Energy Consumption z MWh na TWh
+df_display['energy_consumption'] = df_display['energy_consumption'] / 1_000_000
+
+# Obliczanie statystyk
+stats = df_display.describe().T
+stats = stats[['mean', 'std', 'min', '50%', 'max']]
+
+# Dodanie Współczynnika Zmienności (Coefficient of Variation) w %
+stats['CV (%)'] = (stats['std'] / stats['mean']) * 100
+
+# Zmiana nazw kolumn na polskie
+stats.columns = ['Średnia', 'Odchylenie Std.', 'Min', 'Mediana', 'Max', 'Zmienność (CV %)']
+
+# Mapowanie nazw zmiennych
+variable_names = {
+    'res_share': 'Udział OZE (ułamek)',
+    'fossil_share': 'Udział Paliw Kopalnych (ułamek)',
+    'market_price': 'Cena Rynkowa [EUR/MWh]',
+    'price_volatility': 'Zmienność Cen (wew. miesiąca)',
+    'energy_consumption': 'Zużycie Energii [TWh]',
+    'system_stability': 'Błąd Prognozy MAPE (Stabilność)'
+}
+stats = stats.rename(index=variable_names)
+
+# Wyświetlenie tabeli
+print(stats.to_markdown(floatfmt=".4f"))
+```
+
+## 3.1.1. Wizualizacja szeregów czasowych
+
+Wizualizacja przebiegu zmiennych w czasie pozwala zidentyfikować trendy, sezonowość oraz wpływ szoków zewnętrznych. Na wykresach poniżej zacieniowano okresy kryzysowe:
+
+Szary obszar: Pandemia COVID-19 (03.2020 – 06.2021).
+
+Czerwony obszar: Kryzys energetyczny i wojna w Ukrainie (09.2021 – 12.2023).
+
+```{python}
+#| label: wizualizacja-szeregow
+#| echo: false
+#| fig-cap: "Przebieg zmiennych diagnostycznych w latach 2015-2025."
+#| fig-height: 10
+#| warning: false
+
+fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 10))
+axes = axes.flatten()
+
+# Słownik tytułów dla lepszej czytelności
+titles = {
+    'res_share': 'Udział OZE (Stymulanta)',
+    'fossil_share': 'Udział Paliw Kopalnych (Destymulanta)',
+    'market_price': 'Cena Rynkowa [EUR/MWh]',
+    'price_volatility': 'Zmienność Cen',
+    'energy_consumption': 'Zużycie Energii [MWh]',
+    'system_stability': 'Błąd Prognozy (Stabilność)'
+}
+
+colors = ['green', 'black', 'blue', 'purple', 'orange', 'brown']
+
+for i, col in enumerate(diagnostic_vars):
+    ax = axes[i]
+    ax.plot(df.index, df[col], color=colors[i], linewidth=1.5)
+    ax.set_title(titles.get(col, col), fontsize=10, fontweight='bold')
+    
+    # Oznaczenie kryzysów
+    ax.axvspan('2020-03-01', '2021-06-30', color='gray', alpha=0.15, label='COVID-19')
+    ax.axvspan('2021-09-01', '2023-12-31', color='red', alpha=0.10, label='Kryzys Energetyczny')
+    
+    ax.grid(True, alpha=0.3)
+    
+    # Legenda tylko dla pierwszego wykresu
+    if i == 0:
+        ax.legend(loc='upper left', fontsize=8)
+
+plt.tight_layout()
+plt.show()
+```
+
+Analiza wizualna szeregów czasowych pozwala na sformułowanie trzech kluczowych wniosków dotyczących dynamiki niemieckiego rynku energii w badanym okresie:
+
+Strukturalna transformacja miksu energetycznego: Zmienne Udział OZE oraz Udział Paliw Kopalnych wykazują wyraźny, długoterminowy trend deterministyczny. Obserwujemy systematyczny wzrost znaczenia źródeł odnawialnych przy jednoczesnym spadku generacji konwencjonalnej. Zjawisko to potwierdza postępującą realizację celów Energiewende, choć widoczna jest silna sezonowość wynikająca z warunków pogodowych (wietrzność i nasłonecznienie).
+
+Wpływ szoków egzogenicznych na ceny: Przebieg zmiennej Cena Rynkowa oraz Zmienność Cen wskazuje na wystąpienie ekstremalnej anomalii w latach 2021–2022 (obszar zacieniowany na czerwono). Wzrost cen do poziomów przekraczających 400 EUR/MWh nie wynikał z cykli koniunkturalnych, lecz był skutkiem szoku podażowego (kryzys gazowy i wojna w Ukrainie). Wcześniejszy okres pandemii COVID-19 (obszar szary) charakteryzował się z kolei presją deflacyjną na ceny energii.
+
+Stabilność popytu a zmienność rynku: Zmienna Zużycie Energii wykazuje wysoką stabilność i silną sezonowość roczną, z jedynie niewielkim załamaniem w pierwszej fazie pandemii. Kontrastuje to z gigantyczną zmiennością strony cenowej. Oznacza to, że rynek energii w Niemczech jest sztywny popytowo – drastyczne zmiany cen w niewielkim stopniu przekładają się na natychmiastową redukcję konsumpcji.
+
+## 3.1.2. Mapa ciepła korelacji (Klaudia)
+Opis: W tej sekcji należy przedstawić macierz korelacji Pearsona dla zmiennych diagnostycznych. Celem jest identyfikacja siły i kierunku powiązań między zmiennymi (np. czy wzrost udziału OZE faktycznie wiąże się ze spadkiem emisji paliw kopalnych). Jest to kluczowy krok uzasadniający użycie metody PCA, która redukuje wymiarowość silnie skorelowanych danych. Należy również zweryfikować, czy zmienne nie są ze sobą tożsame (korelacja bliska 1 lub -1).
+
+# [PLACEHOLDER: Skrypt Python do generowania mapy ciepła korelacji (seaborn.heatmap)]
+
+Komentarz analityczny: (Tutaj opisz, które zmienne są najsilniej skorelowane. Np. spodziewamy się silnej ujemnej korelacji między res_share a fossil_share. Należy też wspomnieć o korelacji ceny market_price ze zmiennością price_volatility).
+
+Wskazówka: Użyj biblioteki seaborn i funkcji heatmap. Pamiętaj, aby użyć danych miesięcznych. Sprawdź, czy korelacje potwierdzają logiczne założenia (np. więcej wiatru = mniej węgla).
+
+## 3.2. Konstrukcja i analiza wskaźników syntetycznych (Klaudia)
+Opis: Sekcja ta opisuje proces transformacji surowych zmiennych w gotowe indeksy. Należy przeprowadzić standaryzację zmiennych (Z-Score) w celu doprowadzenia ich do porównywalności. Następnie, na bazie ujednoliconych danych, należy obliczyć trzy warianty wskaźnika:
+
+EW (Equal Weighting): Prosta średnia arytmetyczna.
+
+PCA (Principal Component Analysis): Wyznaczenie pierwszej składowej głównej, która wyjaśnia największą część wariancji.
+
+EWM (Entropy Weighting Method): Wyliczenie wag na podstawie entropii Shannona (im większa zmienność danych, tym większa waga). Wynikiem ma być wykres liniowy porównujący przebieg tych trzech indeksów w czasie.
+
+# [PLACEHOLDER: Skrypt Python do standaryzacji danych, obliczenia wag EWM, przeprowadzenia PCA i wygenerowania wykresu trzech indeksów]
+
+Komentarz analityczny: (Tutaj opisz, jak różnią się od siebie indeksy. Czy PCA jest bardziej "poszarpane" (wrażliwe na skoki cen)? Czy EWM jest bardziej stabilne? Należy wskazać momenty, w których indeksy "rozjeżdżają się" i spróbować wyjaśnić dlaczego).
+
+Wskazówka: To jest najtrudniejszy kawałek kodu matematycznego.
+
+Pamiętaj o kierunku zmiennych: Ceny i Paliwa Kopalne to destymulanty (musisz je pomnożyć przez -1 lub odwrócić przed agregacją, żeby wzrost indeksu zawsze oznaczał "dobrze").
+
+Przy EWM pamiętaj o normalizacji (0-1) przed liczeniem logarytmów.
+
+## 3.3. Podejście 1: Prognoza bezpośrednia indeksu (Iza)
+Opis: W tym podejściu traktujemy obliczone wcześniej indeksy syntetyczne (EW, PCA, EWM) jako gotowe szeregi czasowe. Celem jest dopasowanie do nich najlepszego modelu prognostycznego (np. SARIMA lub Holt-Winters) i wygenerowanie prognozy na 24 miesiące do przodu. Należy podzielić zbiór na treningowy i testowy (ostatnie 2 lata), aby sprawdzić jakość modelu.
+
+# [PLACEHOLDER: Skrypt Python z funkcją 'best_time_model', który prognozuje bezpośrednio szeregi idx_ew, idx_pca, idx_ewm i liczy błędy na zbiorze testowym]
+
+Komentarz analityczny: (Tutaj oceń, jak dobrze modele poradziły sobie z prognozowaniem całego indeksu. Czy modele wykryły trend wzrostowy po kryzysie? Który indeks był najłatwiejszy do prognozowania?)
+
+Wskazówka: Musisz napisać pętlę, która bierze każdy z 3 indeksów, ucina ostatnie 24 miesiące, trenuje model na reszcie i sprawdza, jak prognoza pokrywa się z rzeczywistością. Wyświetl błędy RMSE i MAE.
+
+Jasne, to doskonały moment na podział pracy.
+
+Poniżej znajduje się plan dla pozostałych sekcji raportu. Podzieliłem zadania tak, aby Klaudia zajęła się "inżynierią" wskaźnika (analiza korelacji i budowa matematyczna indeksów), a Iza zajęła się "prognozowaniem" (modele predykcyjne i ocena ich jakości).
+
+3.1.2. Mapa ciepła korelacji (Klaudia)
+Opis: W tej sekcji należy przedstawić macierz korelacji Pearsona dla zmiennych diagnostycznych. Celem jest identyfikacja siły i kierunku powiązań między zmiennymi (np. czy wzrost udziału OZE faktycznie wiąże się ze spadkiem emisji paliw kopalnych). Jest to kluczowy krok uzasadniający użycie metody PCA, która redukuje wymiarowość silnie skorelowanych danych. Należy również zweryfikować, czy zmienne nie są ze sobą tożsame (korelacja bliska 1 lub -1).
+
+# [PLACEHOLDER: Skrypt Python do generowania mapy ciepła korelacji (seaborn.heatmap)]
+
+Komentarz analityczny: (Tutaj Klaudia opisze, które zmienne są najsilniej skorelowane. Np. spodziewamy się silnej ujemnej korelacji między res_share a fossil_share. Należy też wspomnieć o korelacji ceny market_price ze zmiennością price_volatility).
+
+Wskazówka dla Klaudii: Użyj biblioteki seaborn i funkcji heatmap. Pamiętaj, aby użyć danych miesięcznych. Sprawdź, czy korelacje potwierdzają logiczne założenia (np. więcej wiatru = mniej węgla).
+
+## 3.2. Konstrukcja i analiza wskaźników syntetycznych (Klaudia)
+Opis: To "serce" projektu. Sekcja ta opisuje proces transformacji surowych zmiennych w gotowe indeksy. Należy przeprowadzić standaryzację zmiennych (Z-Score) w celu doprowadzenia ich do porównywalności. Następnie, na bazie ujednoliconych danych, należy obliczyć trzy warianty wskaźnika:
+
+EW (Equal Weighting): Prosta średnia arytmetyczna.
+
+PCA (Principal Component Analysis): Wyznaczenie pierwszej składowej głównej, która wyjaśnia największą część wariancji.
+
+EWM (Entropy Weighting Method): Wyliczenie wag na podstawie entropii Shannona (im większa zmienność danych, tym większa waga). Wynikiem ma być wykres liniowy porównujący przebieg tych trzech indeksów w czasie.
+
+# [PLACEHOLDER: Skrypt Python do standaryzacji danych, obliczenia wag EWM, przeprowadzenia PCA i wygenerowania wykresu trzech indeksów]
+
+Komentarz analityczny: (Tutaj Klaudia opisze, jak różnią się od siebie indeksy. Czy PCA jest bardziej "poszarpane" (wrażliwe na skoki cen)? Czy EWM jest bardziej stabilne? Należy wskazać momenty, w których indeksy "rozjeżdżają się" i spróbować wyjaśnić dlaczego).
+
+Wskazówka dla Klaudii: To jest najtrudniejszy kawałek kodu matematycznego.
+
+Pamiętaj o kierunku zmiennych: Ceny i Paliwa Kopalne to destymulanty (musisz je pomnożyć przez -1 lub odwrócić przed agregacją, żeby wzrost indeksu zawsze oznaczał "dobrze").
+
+Przy EWM pamiętaj o normalizacji (0-1) przed liczeniem logarytmów.
+
+## 3.3. Podejście 1: Prognoza bezpośrednia indeksu (Iza)
+Opis: W tym podejściu traktujemy obliczone wcześniej indeksy syntetyczne (EW, PCA, EWM) jako gotowe szeregi czasowe. Celem jest dopasowanie do nich najlepszego modelu prognostycznego (np. SARIMA lub Holt-Winters) i wygenerowanie prognozy na 24 miesiące do przodu. Należy podzielić zbiór na treningowy i testowy (ostatnie 2 lata), aby sprawdzić jakość modelu.
+
+# [PLACEHOLDER: Skrypt Python z funkcją 'best_time_model', który prognozuje bezpośrednio szeregi idx_ew, idx_pca, idx_ewm i liczy błędy na zbiorze testowym]
+
+Komentarz analityczny: (Tutaj oceń, jak dobrze modele poradziły sobie z prognozowaniem całego indeksu. Czy modele wykryły trend wzrostowy po kryzysie? Który indeks był najłatwiejszy do prognozowania?)
+
+Wskazówka: Musisz napisać pętlę, która bierze każdy z 3 indeksów, ucina ostatnie 24 miesiące, trenuje model na reszcie i sprawdza, jak prognoza pokrywa się z rzeczywistością. Wyświetl błędy RMSE i MAE.
+
+## 3.4. Podejście 2: Prognoza składników i agregacja (Iza)
+Opis: To podejście alternatywne ("od dołu do góry"). Zamiast prognozować gotowy indeks, prognozujemy każdą z 6 zmiennych diagnostycznych osobno (np. osobno prognozujemy cenę prądu, osobno udział OZE). Dopiero mając prognozy tych składników na przyszłość, składamy je w indeks syntetyczny, używając wag wyliczonych w sekcji 3.2.
+
+# [PLACEHOLDER: Skrypt Python, który prognozuje każdą z 6 zmiennych diagnostycznych osobno, a następnie składa te prognozy w finalne indeksy EW/PCA/EWM]
+
+Komentarz analityczny: (Tutaj opisz specyfikę tego podejścia. Czy prognozowanie osobno cen (które są bardzo zmienne) i osobno zużycia (które jest stabilne) dało lepszy wynik końcowy niż w podejściu 1?)
+
+Wskazówka: To wymaga trochę "zabawy" z danymi. Musisz stworzyć DataFrame z prognozami dla każdej zmiennej, a potem na tych prognozach wykonać to samo mnożenie przez wagi, które Klaudia zrobiła w punkcie 3.2.
+
+## 3.5. Analiza porównawcza i Wnioski (Wspólne)
+Opis: Zestawienie wyników z punktu 3.3 i 3.4. Tabela porównująca błędy (np. RMSE) dla obu podejść. Wskazanie zwycięskiej metody dla każdego typu indeksu.
+
+# [PLACEHOLDER: Skrypt Python generujący tabelę porównawczą błędów (Podejście 1 vs Podejście 2)]
+
+Komentarz analityczny: (Podsumowanie: Która metoda wygrała? Zazwyczaj "Podejście 2" (agregacja) jest stabilniejsze, ale "Podejście 1" może być lepsze, jeśli zmienne są mocno skorelowane. Należy wydać werdykt).
+
+Propozycja: Możemy stworzyć prostą tabelkę: Wiersze to EW, PCA, EWM. Kolumny to RMSE (Bezpośrednia) i RMSE (Pośrednia). Zaznaczyć pogrubieniem najmniejsze błędy.
+
+## 4. Wnioski i Rekomendacje dla Branży (Wspólne)
+
+#Wstępnie wg własnych przemyśleń, do ustalenia później co i jak podsumujemy
+
+Synteza Transformacji:
+
+Jak wyglądał trend wskaźnika w ostatnich 10 latach? Czy transformacja (Energiewende) przyspiesza, czy hamuje?
+
+Czy kryzys energetyczny (2022) trwale zmienił trajektorię rynku, czy był tylko chwilowym zaburzeniem?
+
+Prognoza na 2026-2027 (Co mówią nasze modele?):
+
+Czy modele przewidują stabilizację cen?
+
+Czy udział OZE będzie rósł liniowo czy wykładniczo?
+
+Co to oznacza dla inwestorów? (np. "Spadająca zmienność cen sugeruje mniejsze ryzyko dla inwestycji długoterminowych, ale mniejszą opłacalność dla magazynów energii zarabiających na arbitrażu").
+
+#Dodatkowo:
+
+Jasno wskazać, który indeks (EW, PCA czy EWM) najlepiej oddaje rzeczywistość niemiecką i dlaczego warto go stosować w future (np. "EWM najlepiej reaguje na szoki cenowe").
+
+# 5. Bibliografia
+
+* ENTSO-E Transparency Platform. Central collection and publication of electricity generation, transportation and consumption data and information for the pan-European market. Dostępne pod adresem: https://transparency.entsoe.eu/.
+* SMARD.de. Electricity market data platform of the Bundesnetzagentur. Dostępne pod adresem: https://www.smard.de/.
+* Komisja Europejska. Rozporządzenie Komisji (UE) nr 543/2013 z dnia 14 czerwca 2013 r. w sprawie dostarczania i publikowania danych na rynkach energii elektrycznej.
+* Bundesnetzagentur. Monitoringbericht 2024 (Raport monitorujący rynek energii).

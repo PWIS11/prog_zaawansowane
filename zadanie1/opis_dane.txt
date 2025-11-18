@@ -1,0 +1,68 @@
+1. Źródło i Zakres Czasowy
+
+Źródło pierwotne: ENTSO-E Transparency Platform (Europejska Sieć Operatorów Systemów Przesyłowych Energii Elektrycznej). Jest to centralne repozytorium danych dla europejskiego rynku energii, wymagane prawem UE (Rozporządzenie nr 543/2013).
+
+Narzędzie ekstrakcji: Biblioteka Python entsoe-py, która łączy się z RESTful API platformy.
+
+Zakres czasowy: Od 1 stycznia 2015 (początek pełnego raportowania ENTSO-E) do listopada 2025 (dane bieżące).
+
+Obszar geograficzny: Niemcy (DE), z uwzględnieniem zmian historycznych w strefach cenowych (opisane poniżej).
+
+2. Szczegółowy opis pobranych zbiorów
+
+Pobraliśmy 4 kluczowe pliki CSV. 
+
+Oto co dokładnie zawierają:
+
+A. Rzeczywista Generacja wg Źródeł (raw_generation_de.csv)
+Co to jest: Szczegółowe dane o tym, ile energii (w MW) wyprodukowała każda technologia w danej godzinie/kwadransie.
+
+Struktura: Kolumny reprezentują typy paliw, np.:
+
+OZE: Wind Offshore, Wind Onshore, Solar, Biomass, Hydro Run-of-river.
+
+Konwencjonalne: Fossil Hard Coal (Węgiel kamienny), Fossil Brown Coal (Węgiel brunatny), Fossil Gas, Nuclear.
+
+Cel w projekcie: Służy do obliczenia Wskaźnika Innowacyjności (Renewable Share). 
+
+Pozwala nam zmierzyć postęp Energiewende – czyli jak bardzo mikst energetyczny przesuwa się z węgla/atomu na wiatr/słońce.
+
+B. Ceny Rynku Dnia Następnego (raw_prices_de_combined.csv)
+Co to jest: Hurtowa cena energii elektrycznej (w EUR/MWh) ustalana na aukcjach na dzień przed fizyczną dostawą (Day-Ahead Market).
+
+Kluczowy aspekt metodyczny:
+
+Dane są "szyte" z dwóch historycznych stref cenowych.
+
+2015 – wrzesień 2018: Pobrano dla strefy DE-AT-LU (Niemcy, Austria, Luksemburg stanowiły jeden rynek).
+
+październik 2018 – teraz: Pobrano dla strefy DE-LU (Niemcy i Luksemburg; Austria została wydzielona).
+
+Cel w projekcie: Służy do obliczenia Wskaźnika Konkurencyjności (Price Efficiency). Cena jest sygnałem rynkowym – pokazuje napięcia w systemie, wpływ OZE na obniżki cen (merit-order effect) oraz kryzysy (np. rok 2022).
+
+C. Całkowite Obciążenie Systemu (raw_load_de.csv)
+Co to jest: Actual Total Load. Sumaryczne zużycie energii elektrycznej w Niemczech w danym momencie (MW).
+
+Cel w projekcie:
+
+Reprezentuje Skalę Rynku.
+
+Jest mianownikiem dla wielu wskaźników (np. jaki procent zapotrzebowania pokryły wiatraki).
+
+D. Prognoza Obciążenia Systemu (raw_load_forecast_de.csv)
+Co to jest: Day-Ahead Total Load Forecast. Przewidywanie operatorów (TSO) dotyczące tego, jakie będzie zużycie następnego dnia.
+
+Cel w projekcie: Służy do obliczenia Wskaźnika Stabilności/Bezpieczeństwa (Forecast Error).
+
+Porównując prognozę (z pliku D) z rzeczywistością (z pliku C), możemy policzyć błąd prognozy.
+
+Im mniejszy błąd, tym system jest bardziej przewidywalny i stabilny. Rosnący błąd może świadczyć o trudnościach w zarządzaniu coraz bardziej złożonym systemem OZE.
+
+3. Podsumowanie
+
+| Nazwa Pliku (Zmienna Raw)       | Źródło API | Granularność | Zastosowanie w Indeksie Syntetycznym                         |
+|---------------------------------|------------|--------------|--------------------------------------------------------------|
+| raw_generation_de.csv           | ENTSO-E    | 15 min / 1 h | Wymiar Ekologiczny: Obliczenie udziału OZE vs Paliwa Kopalne |
+| raw_prices_de_combined.csv      | ENTSO-E    | 1 h          | Wymiar Ekonomiczny: Analiza kosztów energii i trendów cen    |
+| raw_load_de.csv                 | ENTSO-E    | 15 min       | Wymiar Rynkowy: Skala popytu na energię                      |
+| raw_load_forecast_de.csv        | ENTSO-E    | 15 min       | Wymiar Techniczny: Obliczenie błędu prognozy (stabilność)    |
