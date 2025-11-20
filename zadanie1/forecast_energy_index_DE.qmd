@@ -208,35 +208,155 @@ Wpływ szoków egzogenicznych na ceny: Przebieg zmiennej Cena Rynkowa oraz Zmien
 
 Stabilność popytu a zmienność rynku: Zmienna Zużycie Energii wykazuje wysoką stabilność i silną sezonowość roczną, z jedynie niewielkim załamaniem w pierwszej fazie pandemii. Kontrastuje to z gigantyczną zmiennością strony cenowej. Oznacza to, że rynek energii w Niemczech jest sztywny popytowo – drastyczne zmiany cen w niewielkim stopniu przekładają się na natychmiastową redukcję konsumpcji.
 
-## 3.1.2. Mapa ciepła korelacji (Klaudia)
+## 3.1.2. Mapa ciepła korelacji (Iza)
 Opis: W tej sekcji należy przedstawić macierz korelacji Pearsona dla zmiennych diagnostycznych. Celem jest identyfikacja siły i kierunku powiązań między zmiennymi (np. czy wzrost udziału OZE faktycznie wiąże się ze spadkiem emisji paliw kopalnych). Jest to kluczowy krok uzasadniający użycie metody PCA, która redukuje wymiarowość silnie skorelowanych danych. Należy również zweryfikować, czy zmienne nie są ze sobą tożsame (korelacja bliska 1 lub -1).
 
-# [PLACEHOLDER: Skrypt Python do generowania mapy ciepła korelacji (seaborn.heatmap)]
 
-Komentarz analityczny: (Tutaj opisz, które zmienne są najsilniej skorelowane. Np. spodziewamy się silnej ujemnej korelacji między res_share a fossil_share. Należy też wspomnieć o korelacji ceny market_price ze zmiennością price_volatility).
+```{python}
+# --HEATMAPA--
 
-Wskazówka: Użyj biblioteki seaborn i funkcji heatmap. Pamiętaj, aby użyć danych miesięcznych. Sprawdź, czy korelacje potwierdzają logiczne założenia (np. więcej wiatru = mniej węgla).
+import seaborn as sns
+df_heatmapa = df[diagnostic_vars]
+plt.figure(figsize=(8,6))
+corr = df_heatmapa.corr()  
+sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f")
+plt.title("Heatmapa korelacji zmiennych")
+plt.show()
 
-## 3.2. Konstrukcja i analiza wskaźników syntetycznych (Klaudia)
+```
+
+
+Najbardziej fundamentalną zależnością, widoczną na pierwszy rzut oka, jest niemal idealna ujemna korelacja ($r = -0.96$) pomiędzy udziałem źródeł odnawialnych (**res_share**) a udziałem paliw kopalnych (**fossil_share**). Oznacza to, że wzrost generacji z OZE niemal automatycznie i proporcjonalnie skutkuje redukcją produkcji z elektrowni konwencjonalnych. Jest to dowód na bezpośrednie wypieranie energetyki konwencjonalnej przez źródła odnawialne.
+
+Drugim istotnym wnioskiem jest bardzo silna korelacja dodatnia ($r = 0.93$) łącząca cenę rynkową (**market_price**) z jej zmiennością (**price_volatility**). Oznacza to, że okresy drogiej energii nie są stabilne – wysokim cenom towarzyszą gwałtowne wahania (skoki cenowe). Wskazuje to, że szoki cenowe (np. kryzys energetyczny 2021-2022) destabilizują rynek, czyniąc go nieprzewidywalnym dla uczestników.
+
+Interesujące zależności ujawnia również analiza całkowitego zużycia energii (**energy_consumption**). Zmienna ta jest dodatnio skorelowana z udziałem paliw kopalnych ($0.60$) i ujemnie z udziałem OZE ($-0.62$). Wynika to z charakterystyki sezonowej: najwyższe zapotrzebowanie na energię w Niemczech występuje zimą, kiedy generacja słoneczna (kluczowy składnik OZE) jest minimalna, a system musi być bilansowany przez sterowalne elektrownie węglowe i gazowe.
+
+Ciekawym spostrzeżeniem jest brak istotnej korelacji liniowej pomiędzy ceną energii (**market_price**) a strukturą produkcji ($fossil_share: -0.02$, $res_share: 0.15$). Wskazuje to, że ceny hurtowe w badanym okresie były determinowane głównie przez czynniki zewnętrzne i geopolityczne (np. globalne ceny surowców), a nie przez lokalny udział wiatru czy węgla w systemie. Potwierdza to słuszność uwzględnienia ceny jako osobnej, niezależnej zmiennej diagnostycznej, gdyż niesie ona zupełnie inne informacje niż dane o produkcji
+
+
+
+## 3.2. Konstrukcja i analiza wskaźników syntetycznych (Iza)
 Opis: Sekcja ta opisuje proces transformacji surowych zmiennych w gotowe indeksy. Należy przeprowadzić standaryzację zmiennych (Z-Score) w celu doprowadzenia ich do porównywalności. Następnie, na bazie ujednoliconych danych, należy obliczyć trzy warianty wskaźnika:
 
-EW (Equal Weighting): Prosta średnia arytmetyczna.
+```{python}
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.decomposition import PCA
+# --Stymulanty + Destymulanty--
 
-PCA (Principal Component Analysis): Wyznaczenie pierwszej składowej głównej, która wyjaśnia największą część wariancji.
+# kopia żeby nie psuć oryginału
 
-EWM (Entropy Weighting Method): Wyliczenie wag na podstawie entropii Shannona (im większa zmienność danych, tym większa waga). Wynikiem ma być wykres liniowy porównujący przebieg tych trzech indeksów w czasie.
+X = df[diagnostic_vars].copy()
 
-# [PLACEHOLDER: Skrypt Python do standaryzacji danych, obliczenia wag EWM, przeprowadzenia PCA i wygenerowania wykresu trzech indeksów]
+# Destymulanty
+# - fossil_share (chcemy mniej)
+# - market_price (dla konsumenta niższa cena = lepiej)
+# - price_volatility (stabilność = lepiej)
+# - system_stability (mniejszy błąd = lepiej)
+destymulanty = ['fossil_share', 'market_price', 'price_volatility', 'system_stability']
 
-Komentarz analityczny: (Tutaj opisz, jak różnią się od siebie indeksy. Czy PCA jest bardziej "poszarpane" (wrażliwe na skoki cen)? Czy EWM jest bardziej stabilne? Należy wskazać momenty, w których indeksy "rozjeżdżają się" i spróbować wyjaśnić dlaczego).
+# zamiana destymulant na stymulanty przez mnożenie * -1
+for col in destymulanty:
+    X[col] = -X[col]
 
-Wskazówka: To jest najtrudniejszy kawałek kodu matematycznego.
 
-Pamiętaj o kierunku zmiennych: Ceny i Paliwa Kopalne to destymulanty (musisz je pomnożyć przez -1 lub odwrócić przed agregacją, żeby wzrost indeksu zawsze oznaczał "dobrze").
+# --STANDARYZACJA--
 
-Przy EWM pamiętaj o normalizacji (0-1) przed liczeniem logarytmów.
+scaler_std = StandardScaler()
+X_std = pd.DataFrame(scaler_std.fit_transform(X), columns=X.columns, index=X.index)
+print('\nPrzykładowe wiersze po standaryzacji:')
+print(X_std.head())
 
-## 3.3. Podejście 1: Prognoza bezpośrednia indeksu (Iza)
+
+```
+
+## EW (Equal Weighting): Prosta średnia arytmetyczna.
+
+```{python}
+idx_ew = X_std.mean(axis=1)
+print(idx_ew)
+```
+
+## PCA (Principal Component Analysis): Wyznaczenie pierwszej składowej głównej, która wyjaśnia największą część wariancji.
+
+```{python}
+pca = PCA(n_components=1)
+pca_values = pca.fit_transform(X_std).flatten()
+idx_pca = pd.Series(pca_values, index=X.index)
+
+
+
+weights_pca = pd.Series(pca.components_[0], index=X_std.columns)
+print("Wagi PCA dla zmiennych:")
+print(weights_pca)
+
+
+```
+
+## EWM (Entropy Weighting Method): Wyliczenie wag na podstawie entropii Shannona (im większa zmienność danych, tym większa waga). Wynikiem ma być wykres liniowy porównujący przebieg tych trzech indeksów w czasie.
+
+```{python}
+scaler_minmax = MinMaxScaler()
+X_norm = pd.DataFrame(scaler_minmax.fit_transform(X), columns=X.columns, index=X.index)
+
+epsilon = 1e-8
+P = X_norm / (X_norm.sum(axis=0) + epsilon)
+P = np.where(P == 0, epsilon, P) 
+
+k = 1 / np.log(len(X_norm))
+E = -k * (P * np.log(P)).sum(axis=0)
+d = 1 - E
+
+
+# Obliczenie wag
+weights_ewm = d / d.sum()
+
+idx_ewm = (X_norm * weights_ewm).sum(axis=1)
+print("\nWagi EWM:", {col: round(w, 4) for col, w in zip(diagnostic_vars, weights_ewm)})
+
+```
+
+## Porównanie wskaźników
+
+```{python}
+
+results = pd.DataFrame({
+    'EW (Średnia)': idx_ew,
+    'PCA (Główna Składowa)': idx_pca,
+    'EWM (Entropia)': idx_ewm
+}, index=X.index)
+
+# skalowanie osi, bez przeskalowania EWM było bardzo płaskie
+results_scaled = pd.DataFrame(
+    scaler_minmax.fit_transform(results), 
+    columns=results.columns, 
+    index=results.index
+)
+
+plt.figure(figsize=(12, 6))
+plt.plot(results_scaled.index, results_scaled['EW (Średnia)'], label='EW', color='blue', alpha=0.6, linestyle='--')
+plt.plot(results_scaled.index, results_scaled['PCA (Główna Składowa)'], label='PCA', color='green', alpha=0.6, linestyle='--')
+plt.plot(results_scaled.index, results_scaled['EWM (Entropia)'], label='EWM', color='red', linewidth=2)
+
+plt.title('Porównanie Znormalizowanych Indeksów (Skala 0-1)')
+plt.ylabel('Wartość Indeksu')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+
+Wykres przedstawia trzy indeksy (EW, PCA i EWM), które poruszają się w podobnych cyklach, ale różnią się wrażliwością na zmiany. EW jest najbardziej stabilny, utrzymuje się zwykle w przedziale 0.4–0.8 i dobrze oddaje średni poziom analizowanego zjawiska.
+
+PCA cechuje się najwyższą zmiennością. Ponieważ wagi są wyznaczane na podstawie wariancji i struktury korelacji między zmiennymi, wskaźnik ten silnie reaguje na skoki w danych – zwłaszcza w okresach zakłóceń rynkowych. Największe wahania PCA obserwujemy w latach 2015, 2021 oraz 2025, kiedy pojawiały się strukturalne zmiany w miksie energetycznym lub szoki cenowe. PCA odzwierciedla zatem zmienność systemową, a nie tylko poziom rozwoju. 
+
+EWM pozostaje między nimi: jest wygładzony, ale nadal wyraźnie reaguje na krótkookresowe zmiany, co widać np. w silnym spadku w 2022 roku i stabilnym wzroście po 2023 roku. Największe różnice między indeksami pojawiają się w okresach podwyższonej zmienności (2021–2022 oraz 2024–2025), kiedy PCA sygnalizuje silne skoki, podczas gdy EW pozostaje stabilny, a EWM reaguje szybciej, lecz z pewnym opóźnieniem. Wspólnie serie pokazują, że mimo tej samej ogólnej dynamiki, każdy indeks uchwyca inną stronę zjawiska: EW – średni trend, EWM – bieżący moment i punkty zwrotne, a PCA – strukturalną zmienność danych.
+
+
+
+
+## 3.3. Podejście 1: Prognoza bezpośrednia indeksu (Klaudia)
 Opis: W tym podejściu traktujemy obliczone wcześniej indeksy syntetyczne (EW, PCA, EWM) jako gotowe szeregi czasowe. Celem jest dopasowanie do nich najlepszego modelu prognostycznego (np. SARIMA lub Holt-Winters) i wygenerowanie prognozy na 24 miesiące do przodu. Należy podzielić zbiór na treningowy i testowy (ostatnie 2 lata), aby sprawdzić jakość modelu.
 
 # [PLACEHOLDER: Skrypt Python z funkcją 'best_time_model', który prognozuje bezpośrednio szeregi idx_ew, idx_pca, idx_ewm i liczy błędy na zbiorze testowym]
@@ -277,7 +397,7 @@ Pamiętaj o kierunku zmiennych: Ceny i Paliwa Kopalne to destymulanty (musisz je
 
 Przy EWM pamiętaj o normalizacji (0-1) przed liczeniem logarytmów.
 
-## 3.3. Podejście 1: Prognoza bezpośrednia indeksu (Iza)
+## 3.3. Podejście 1: Prognoza bezpośrednia indeksu (Klaudia)
 Opis: W tym podejściu traktujemy obliczone wcześniej indeksy syntetyczne (EW, PCA, EWM) jako gotowe szeregi czasowe. Celem jest dopasowanie do nich najlepszego modelu prognostycznego (np. SARIMA lub Holt-Winters) i wygenerowanie prognozy na 24 miesiące do przodu. Należy podzielić zbiór na treningowy i testowy (ostatnie 2 lata), aby sprawdzić jakość modelu.
 
 # [PLACEHOLDER: Skrypt Python z funkcją 'best_time_model', który prognozuje bezpośrednio szeregi idx_ew, idx_pca, idx_ewm i liczy błędy na zbiorze testowym]
@@ -286,7 +406,7 @@ Komentarz analityczny: (Tutaj oceń, jak dobrze modele poradziły sobie z progno
 
 Wskazówka: Musisz napisać pętlę, która bierze każdy z 3 indeksów, ucina ostatnie 24 miesiące, trenuje model na reszcie i sprawdza, jak prognoza pokrywa się z rzeczywistością. Wyświetl błędy RMSE i MAE.
 
-## 3.4. Podejście 2: Prognoza składników i agregacja (Iza)
+## 3.4. Podejście 2: Prognoza składników i agregacja (Klaudia)
 Opis: To podejście alternatywne ("od dołu do góry"). Zamiast prognozować gotowy indeks, prognozujemy każdą z 6 zmiennych diagnostycznych osobno (np. osobno prognozujemy cenę prądu, osobno udział OZE). Dopiero mając prognozy tych składników na przyszłość, składamy je w indeks syntetyczny, używając wag wyliczonych w sekcji 3.2.
 
 # [PLACEHOLDER: Skrypt Python, który prognozuje każdą z 6 zmiennych diagnostycznych osobno, a następnie składa te prognozy w finalne indeksy EW/PCA/EWM]
