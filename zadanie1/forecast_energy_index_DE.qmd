@@ -355,56 +355,176 @@ EWM pozostaje między nimi: jest wygładzony, ale nadal wyraźnie reaguje na kr�
 
 
 
-
 ## 3.3. Podejście 1: Prognoza bezpośrednia indeksu (Klaudia)
-Opis: W tym podejściu traktujemy obliczone wcześniej indeksy syntetyczne (EW, PCA, EWM) jako gotowe szeregi czasowe. Celem jest dopasowanie do nich najlepszego modelu prognostycznego (np. SARIMA lub Holt-Winters) i wygenerowanie prognozy na 24 miesiące do przodu. Należy podzielić zbiór na treningowy i testowy (ostatnie 2 lata), aby sprawdzić jakość modelu.
 
-# [PLACEHOLDER: Skrypt Python z funkcją 'best_time_model', który prognozuje bezpośrednio szeregi idx_ew, idx_pca, idx_ewm i liczy błędy na zbiorze testowym]
+W tym podejściu traktujemy obliczone wcześniej indeksy syntetyczne (EW, PCA, EWM) jako gotowe szeregi czasowe. Celem jest dopasowanie do nich najlepszego modelu prognostycznego (np. SARIMA lub Holt-Winters) i wygenerowanie prognozy na 24 miesiące do przodu. Należy podzielić zbiór na treningowy i testowy (ostatnie 2 lata), aby sprawdzić jakość modelu.
 
-Komentarz analityczny: (Tutaj oceń, jak dobrze modele poradziły sobie z prognozowaniem całego indeksu. Czy modele wykryły trend wzrostowy po kryzysie? Który indeks był najłatwiejszy do prognozowania?)
 
-Wskazówka: Musisz napisać pętlę, która bierze każdy z 3 indeksów, ucina ostatnie 24 miesiące, trenuje model na reszcie i sprawdza, jak prognoza pokrywa się z rzeczywistością. Wyświetl błędy RMSE i MAE.
+```{python}
 
-Jasne, to doskonały moment na podział pracy.
+#| label: podział-na-zbiory
+#| echo: true
+#| fig-cap: "Podział na zbiory: testowy i treningowy"
+#| warning: false
 
-Poniżej znajduje się plan dla pozostałych sekcji raportu. Podzieliłem zadania tak, aby Klaudia zajęła się "inżynierią" wskaźnika (analiza korelacji i budowa matematyczna indeksów), a Iza zajęła się "prognozowaniem" (modele predykcyjne i ocena ich jakości).
+freq = 'M'  
+steps_ahead = 24  
+train = idx_ew.iloc[:-steps_ahead]
+test = idx_ew.iloc[-steps_ahead:]
 
-3.1.2. Mapa ciepła korelacji (Klaudia)
-Opis: W tej sekcji należy przedstawić macierz korelacji Pearsona dla zmiennych diagnostycznych. Celem jest identyfikacja siły i kierunku powiązań między zmiennymi (np. czy wzrost udziału OZE faktycznie wiąże się ze spadkiem emisji paliw kopalnych). Jest to kluczowy krok uzasadniający użycie metody PCA, która redukuje wymiarowość silnie skorelowanych danych. Należy również zweryfikować, czy zmienne nie są ze sobą tożsame (korelacja bliska 1 lub -1).
+print(f'Liczba obserwacji w zbiorze treningowym: {len(train)}')
+print(f'Liczba obserwacji w zbiorze testowym: {len(test)}')
 
-# [PLACEHOLDER: Skrypt Python do generowania mapy ciepła korelacji (seaborn.heatmap)]
+```
 
-Komentarz analityczny: (Tutaj Klaudia opisze, które zmienne są najsilniej skorelowane. Np. spodziewamy się silnej ujemnej korelacji między res_share a fossil_share. Należy też wspomnieć o korelacji ceny market_price ze zmiennością price_volatility).
+Przy 130 obserwacjach miesięcznych modele mają wystarczająco dużo danych, aby uchwycić zarówno trend, jak i sezonowość. Podział na 106 miesięcy treningowych i 24 miesiące testowych pozwala rzetelnie ocenić jakość prognozy.
 
-Wskazówka dla Klaudii: Użyj biblioteki seaborn i funkcji heatmap. Pamiętaj, aby użyć danych miesięcznych. Sprawdź, czy korelacje potwierdzają logiczne założenia (np. więcej wiatru = mniej węgla).
 
-## 3.2. Konstrukcja i analiza wskaźników syntetycznych (Klaudia)
-Opis: To "serce" projektu. Sekcja ta opisuje proces transformacji surowych zmiennych w gotowe indeksy. Należy przeprowadzić standaryzację zmiennych (Z-Score) w celu doprowadzenia ich do porównywalności. Następnie, na bazie ujednoliconych danych, należy obliczyć trzy warianty wskaźnika:
+```{python}
 
-EW (Equal Weighting): Prosta średnia arytmetyczna.
+#| label: funkcje-prognoz-bezposrednich-indeksów
+#| echo: true
+#| warning: false
 
-PCA (Principal Component Analysis): Wyznaczenie pierwszej składowej głównej, która wyjaśnia największą część wariancji.
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 
-EWM (Entropy Weighting Method): Wyliczenie wag na podstawie entropii Shannona (im większa zmienność danych, tym większa waga). Wynikiem ma być wykres liniowy porównujący przebieg tych trzech indeksów w czasie.
+# Ocena jakości prognozy 
+def eval_metrics(actual, pred):
+    me = np.mean(pred - actual)
+    mpe = 100*np.mean((pred - actual) / actual)
+    mae = np.mean(np.abs(pred - actual))
+    mape = 100*np.mean(np.abs((pred - actual) / actual))
+    rmse = np.sqrt(np.mean((pred - actual) ** 2))
+    rmspe = 100 * (rmse / np.mean(actual)) if np.mean(actual) != 0 else np.nan
+    t = np.sqrt(np.mean(((pred[1:] - actual[1:])**2)) / np.mean((actual[1:]**2)))
+    return {'ME': me, 'MPE': mpe, 'MAE': mae, 'MAPE': mape, 'RMSE': rmse, 'RMSPE': rmspe, 'Theil': t}
 
-# [PLACEHOLDER: Skrypt Python do standaryzacji danych, obliczenia wag EWM, przeprowadzenia PCA i wygenerowania wykresu trzech indeksów]
+# Wybór najlepszego modelu 
+def best_time_model(series, horizon, freq='M'):
+    s = series.dropna()
+    if freq == 'M':
+        s = s.asfreq('ME')
+    elif freq == 'Q':
+        s = s.asfreq('Q')
+    min_rmspe = np.inf
+    best_pred = None
+    best_str = ''
 
-Komentarz analityczny: (Tutaj Klaudia opisze, jak różnią się od siebie indeksy. Czy PCA jest bardziej "poszarpane" (wrażliwe na skoki cen)? Czy EWM jest bardziej stabilne? Należy wskazać momenty, w których indeksy "rozjeżdżają się" i spróbować wyjaśnić dlaczego).
+   
+    # 1. OLS trend+sezon
+    try:
+        X = np.arange(len(s))
+        dummies = pd.get_dummies(s.index.month, prefix='M') if freq == 'M' else None
+        X_mat = np.column_stack([X, dummies.values]) if dummies is not None else X[:,None]
+        model = sm.OLS(s.values, sm.add_constant(X_mat)).fit()
+        exog_pred = np.column_stack([np.arange(len(s), len(s)+horizon),
+                                     np.eye(dummies.shape[1])[[i%dummies.shape[1] for i in range(len(s), len(s)+horizon)]]]) if dummies is not None else np.arange(len(s), len(s)+horizon)[:,None]
+        ols_pred = model.predict(sm.add_constant(exog_pred))
+        rmspe_ols = 100*np.sqrt(np.mean(((model.fittedvalues - s.values)/s.values)**2))
+        if rmspe_ols < min_rmspe:
+            best_pred, best_str, min_rmspe = ols_pred, 'OLS trend+sezon', rmspe_ols
+    except:
+        pass
 
-Wskazówka dla Klaudii: To jest najtrudniejszy kawałek kodu matematycznego.
+    # 2. Holt-Winters
+    try:
+        hw = ExponentialSmoothing(s, trend='add', seasonal='add', seasonal_periods=12).fit()
+        hw_pred = hw.forecast(horizon)
+        rmspe_hw = 100*np.sqrt(np.mean(((hw.fittedvalues - s.values)/s.values)**2))
+        if rmspe_hw < min_rmspe:
+            best_pred, best_str, min_rmspe = hw_pred, 'Holt-Winters', rmspe_hw
+    except:
+        pass
 
-Pamiętaj o kierunku zmiennych: Ceny i Paliwa Kopalne to destymulanty (musisz je pomnożyć przez -1 lub odwrócić przed agregacją, żeby wzrost indeksu zawsze oznaczał "dobrze").
+    # 3. SARIMA
+    try:
+        sarima = SARIMAX(s, order=(1,1,1), seasonal_order=(1,1,1,12)).fit(disp=False)
+        sarima_pred = sarima.forecast(horizon)
+        rmspe_sarima = 100*np.sqrt(np.mean(((sarima.fittedvalues - s.values)/s.values)**2))
+        if rmspe_sarima < min_rmspe:
+            best_pred, best_str, min_rmspe = sarima_pred, 'SARIMA', rmspe_sarima
+    except:
+        pass
 
-Przy EWM pamiętaj o normalizacji (0-1) przed liczeniem logarytmów.
+    # 4. ETS
+    try:
+        ets = ExponentialSmoothing(s, trend='add', seasonal='add', seasonal_periods=12, damped_trend=True).fit()
+        ets_pred = ets.forecast(horizon)
+        rmspe_ets = 100*np.sqrt(np.mean(((ets.fittedvalues - s.values)/s.values)**2))
+        if rmspe_ets < min_rmspe:
+            best_pred, best_str, min_rmspe = ets_pred, 'ETS', rmspe_ets
+    except:
+        pass
 
-## 3.3. Podejście 1: Prognoza bezpośrednia indeksu (Klaudia)
-Opis: W tym podejściu traktujemy obliczone wcześniej indeksy syntetyczne (EW, PCA, EWM) jako gotowe szeregi czasowe. Celem jest dopasowanie do nich najlepszego modelu prognostycznego (np. SARIMA lub Holt-Winters) i wygenerowanie prognozy na 24 miesiące do przodu. Należy podzielić zbiór na treningowy i testowy (ostatnie 2 lata), aby sprawdzić jakość modelu.
+    # 5. Prophet
+    try:
+        df_prophet = pd.DataFrame({'ds': s.index, 'y': s.values})
+        model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
+        model.fit(df_prophet)
+        future = pd.DataFrame({'ds': pd.date_range(s.index[-1] + pd.offsets.MonthEnd(1), periods=horizon, freq='M')})
+        prophet_pred = model.predict(future)['yhat'].values
+        rmspe_prophet = 100*np.sqrt(np.mean(((model.predict(df_prophet)['yhat'] - s.values)/s.values)**2))
+        if rmspe_prophet < min_rmspe:
+            best_pred, best_str, min_rmspe = prophet_pred, 'Prophet', rmspe_prophet
+    except:
+        pass
 
-# [PLACEHOLDER: Skrypt Python z funkcją 'best_time_model', który prognozuje bezpośrednio szeregi idx_ew, idx_pca, idx_ewm i liczy błędy na zbiorze testowym]
+    # Fallback
+    if best_pred is None or np.isnan(best_pred).any():
+        print(f"\nWARNING: All models failed or produced NaNs. Using fallback forecast.")
+        fallback_value = s.iloc[-1] if not s.empty and not np.isnan(s.iloc[-1]) else s.mean() if not s.empty else 0
+        best_pred = np.full(horizon, fallback_value)
+        best_str = "Fallback (Last Value or Mean)"
 
-Komentarz analityczny: (Tutaj oceń, jak dobrze modele poradziły sobie z prognozowaniem całego indeksu. Czy modele wykryły trend wzrostowy po kryzysie? Który indeks był najłatwiejszy do prognozowania?)
+    return best_pred, best_str
 
-Wskazówka: Musisz napisać pętlę, która bierze każdy z 3 indeksów, ucina ostatnie 24 miesiące, trenuje model na reszcie i sprawdza, jak prognoza pokrywa się z rzeczywistością. Wyświetl błędy RMSE i MAE.
+```
+
+
+```{python}
+
+#| label: prognoza-bezposrednia-indeksu-wyniki
+#| echo: true
+#| fig-cap: "Prognozy bezpośrednie indeksów syntetycznych na 24 miesiące."
+#| warning: fals
+
+# Prognozy bezpośrednie dla indeksów 
+print('\n>>> Prognozy BEZPOŚREDNIE indeksów na 24 miesiące do przodu <<<')
+steps_ahead = 24
+method_labels = {'EW': idx_ew, 'PCA': idx_pca, 'EWM': idx_ewm}
+direct_metrics = {}
+
+for met, idx in method_labels.items():
+    train, test = idx.iloc[:-steps_ahead], idx.iloc[-steps_ahead:]
+    pred, model_name = best_time_model(train, steps_ahead)
+    metrics = eval_metrics(test.values, pred)
+    direct_metrics[met] = {'Model': model_name, **{k: round(v,4) for k,v in metrics.items()}}
+
+    plt.figure(figsize=(11,4))
+    plt.title(f'Prognoza bezpośrednia indeksu [{met}] ({model_name})')
+    plt.plot(idx, label='obserwacje', lw=2)
+    plt.plot(test.index, pred, 'r--', label='prognoza', lw=2)
+    plt.legend(); plt.grid(alpha=0.3); plt.show()
+
+#  Tabela wyników 
+print('\n===============================')
+print('PODSUMOWANIE MIAR TRAFNOŚCI PROGNOZ (OKRES TESTOWY - Prognoza bezpośrednia):')
+direct_metrics_df = pd.DataFrame(direct_metrics).T
+display(direct_metrics_df)
+
+```
+
+
+W podejściu bezpośrednim do prognozowania indeksów syntetycznych (EW, PCA, EWM) zastosowano kilka modeli prognostycznych: Holt‑Winters, ETS oraz SARIMA i Prophet. Wyniki pokazują, że skuteczność prognozowania zależy od charakteru danego indeksu:
+
+Indeks EW (Equal Weights) Najlepszy okazał się model Holt‑Winters, który dobrze uchwycił sezonowość i trend. Jednak wartości błędów procentowych (MAPE > 180%) są bardzo wysokie. Wynika to z faktu, że indeks EW ma stosunkowo niskie wartości, więc nawet niewielkie odchylenia prognozy przekładają się na duże błędy względne. Model częściowo uchwycił trend wzrostowy po kryzysie, ale w okresach gwałtownych zmian prognoza była mniej trafna.
+
+Indeks PCA (Principal Component Analysis) Tutaj również najlepszy był Holt‑Winters, ale błędy są jeszcze wyższe niż w przypadku EW. PCA jest najbardziej zmiennym indeksem, ponieważ syntetyzuje wiele wskaźników o różnej dynamice. Wysoki poziom MAPE (~188%) pokazuje, że prognozowanie PCA jest szczególnie trudne – model nie radzi sobie dobrze z dużą zmiennością i nagłymi odchyleniami. Choć trend został częściowo uchwycony, prognoza nie jest stabilna i wymaga ostrożnej interpretacji.
+
+Indeks EWM (Exponential Weighted Mean) Najlepszy wynik uzyskał model ETS, który bardzo dobrze dopasował się do danych. Błędy są niskie (MAPE ~10%, RMSE ~0.07), co świadczy o wysokiej jakości prognozy. Indeks EWM jest bardziej stabilny i mniej podatny na szoki, dlatego ETS z tłumionym trendem okazał się idealnym wyborem. Model uchwycił zarówno trend wzrostowy po kryzysie, jak i sezonowość, co czyni prognozę wiarygodną.
+
 
 ## 3.4. Podejście 2: Prognoza składników i agregacja (Klaudia)
 Opis: To podejście alternatywne ("od dołu do góry"). Zamiast prognozować gotowy indeks, prognozujemy każdą z 6 zmiennych diagnostycznych osobno (np. osobno prognozujemy cenę prądu, osobno udział OZE). Dopiero mając prognozy tych składników na przyszłość, składamy je w indeks syntetyczny, używając wag wyliczonych w sekcji 3.2.
