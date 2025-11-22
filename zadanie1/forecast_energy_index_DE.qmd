@@ -70,7 +70,7 @@ Badanie porównuje dwie strategie prognostyczne dla horyzontu 24 miesięcy:
 * **Podejście bezpośrednie:** Prognozowanie finalnego indeksu syntetycznego.
 * **Podejście pośrednie (agregacja):** Prognozowanie każdego składnika z osobna, a następnie ich scalenie w indeks.
 
-Wykorzystano modele klasy **Holt-Winters** (wygładzanie wykładnicze z sezonowością) oraz **SARIMA** (Seasonal AutoRegressive Integrated Moving Average). Jakość prognoz oceniono ex-post na zbiorze testowym (ostatnie 24 miesiące) przy użyciu miar MAE (średni błąd bezwzględny), RMSE (pierwiastek błędu średniokwadratowego) oraz RMSPE (błąd procentowy).
+W podejściu bezpośrednim do prognozowania syntetycznych wskaźników zastosowano zestaw modeli klasycznych, a następnie wybrano te, które zapewniały najniższe błędy ex‑post na zbiorze testowym (ostatnie 24 miesiące). Dla indeksu EW oraz PCA najlepsze dopasowanie uzyskano przy użyciu modelu **Holt‑Winters**, natomiast dla indeksu EWM – modelu **ETS**. Jakość prognoz oceniono przy użyciu pełnego zestawu miar trafności: **ME** (średni błąd), **MPE** (średni błąd procentowy), **MAE** (średni błąd bezwzględny), **MAPE** (średni błąd procentowy bezwzględny), **RMSE** (pierwiastek błędu średniokwadratowego), **RMSPE** (względny błąd średniokwadratowy) oraz **współczynnika Theila**.
 
 # 3. Analiza i Wyniki
 
@@ -359,7 +359,6 @@ EWM pozostaje między nimi: jest wygładzony, ale nadal wyraźnie reaguje na kr�
 
 W tym podejściu traktujemy obliczone wcześniej indeksy syntetyczne (EW, PCA, EWM) jako gotowe szeregi czasowe. Celem jest dopasowanie do nich najlepszego modelu prognostycznego (np. SARIMA lub Holt-Winters) i wygenerowanie prognozy na 24 miesiące do przodu. Należy podzielić zbiór na treningowy i testowy (ostatnie 2 lata), aby sprawdzić jakość modelu.
 
-
 ```{python}
 
 #| label: podział-na-zbiory
@@ -378,7 +377,6 @@ print(f'Liczba obserwacji w zbiorze testowym: {len(test)}')
 ```
 
 Przy 130 obserwacjach miesięcznych modele mają wystarczająco dużo danych, aby uchwycić zarówno trend, jak i sezonowość. Podział na 106 miesięcy treningowych i 24 miesiące testowych pozwala rzetelnie ocenić jakość prognozy.
-
 
 ```{python}
 
@@ -519,21 +517,179 @@ display(direct_metrics_df)
 
 W podejściu bezpośrednim do prognozowania indeksów syntetycznych (EW, PCA, EWM) zastosowano kilka modeli prognostycznych: Holt‑Winters, ETS oraz SARIMA i Prophet. Wyniki pokazują, że skuteczność prognozowania zależy od charakteru danego indeksu:
 
-Indeks EW (Equal Weights) Najlepszy okazał się model Holt‑Winters, który dobrze uchwycił sezonowość i trend. Jednak wartości błędów procentowych (MAPE > 180%) są bardzo wysokie. Wynika to z faktu, że indeks EW ma stosunkowo niskie wartości, więc nawet niewielkie odchylenia prognozy przekładają się na duże błędy względne. Model częściowo uchwycił trend wzrostowy po kryzysie, ale w okresach gwałtownych zmian prognoza była mniej trafna.
+**Indeks EW** (*Equal Weights*) Najlepszy okazał się model Holt‑Winters, który dobrze uchwycił sezonowość i trend. Jednak wartości błędów procentowych (**MAPE > 180%**) są bardzo wysokie. Wynika to z faktu, że indeks EW ma stosunkowo niskie wartości, więc nawet niewielkie odchylenia prognozy przekładają się na duże błędy względne. Model częściowo uchwycił trend wzrostowy po kryzysie, ale w okresach gwałtownych zmian prognoza była mniej trafna.
 
-Indeks PCA (Principal Component Analysis) Tutaj również najlepszy był Holt‑Winters, ale błędy są jeszcze wyższe niż w przypadku EW. PCA jest najbardziej zmiennym indeksem, ponieważ syntetyzuje wiele wskaźników o różnej dynamice. Wysoki poziom MAPE (~188%) pokazuje, że prognozowanie PCA jest szczególnie trudne – model nie radzi sobie dobrze z dużą zmiennością i nagłymi odchyleniami. Choć trend został częściowo uchwycony, prognoza nie jest stabilna i wymaga ostrożnej interpretacji.
+**Indeks PCA** (*Principal Component Analysis*) Tutaj również najlepszy był **Holt‑Winters**, ale błędy są jeszcze wyższe niż w przypadku EW. PCA jest najbardziej zmiennym indeksem, ponieważ syntetyzuje wiele wskaźników o różnej dynamice. Wysoki poziom MAPE (**~188%**) pokazuje, że prognozowanie PCA jest szczególnie trudne – model nie radzi sobie dobrze z dużą zmiennością i nagłymi odchyleniami. Choć trend został częściowo uchwycony, prognoza nie jest stabilna i wymaga ostrożnej interpretacji.
 
-Indeks EWM (Exponential Weighted Mean) Najlepszy wynik uzyskał model ETS, który bardzo dobrze dopasował się do danych. Błędy są niskie (MAPE ~10%, RMSE ~0.07), co świadczy o wysokiej jakości prognozy. Indeks EWM jest bardziej stabilny i mniej podatny na szoki, dlatego ETS z tłumionym trendem okazał się idealnym wyborem. Model uchwycił zarówno trend wzrostowy po kryzysie, jak i sezonowość, co czyni prognozę wiarygodną.
-
+**Indeks EWM** (*Exponential Weighted Mean*) Najlepszy wynik uzyskał model ETS, który bardzo dobrze dopasował się do danych. Błędy są niskie (**MAPE ~10%, RMSE ~0.07**), co świadczy o wysokiej jakości prognozy. Indeks EWM jest bardziej stabilny i mniej podatny na szoki, dlatego ETS z tłumionym trendem okazał się idealnym wyborem. Model uchwycił zarówno trend wzrostowy po kryzysie, jak i sezonowość, co czyni prognozę wiarygodną.
 
 ## 3.4. Podejście 2: Prognoza składników i agregacja (Klaudia)
-Opis: To podejście alternatywne ("od dołu do góry"). Zamiast prognozować gotowy indeks, prognozujemy każdą z 6 zmiennych diagnostycznych osobno (np. osobno prognozujemy cenę prądu, osobno udział OZE). Dopiero mając prognozy tych składników na przyszłość, składamy je w indeks syntetyczny, używając wag wyliczonych w sekcji 3.2.
 
-# [PLACEHOLDER: Skrypt Python, który prognozuje każdą z 6 zmiennych diagnostycznych osobno, a następnie składa te prognozy w finalne indeksy EW/PCA/EWM]
+To podejście alternatywne ("od dołu do góry"). Zamiast prognozować gotowy indeks, prognozujemy każdą z 6 zmiennych diagnostycznych osobno (np. osobno prognozujemy cenę prądu, osobno udział OZE). Dopiero mając prognozy tych składników na przyszłość, składamy je w indeks syntetyczny, używając wag wyliczonych w sekcji 3.2.
 
-Komentarz analityczny: (Tutaj opisz specyfikę tego podejścia. Czy prognozowanie osobno cen (które są bardzo zmienne) i osobno zużycia (które jest stabilne) dało lepszy wynik końcowy niż w podejściu 1?)
+``` {python}
 
-Wskazówka: To wymaga trochę "zabawy" z danymi. Musisz stworzyć DataFrame z prognozami dla każdej zmiennej, a potem na tych prognozach wykonać to samo mnożenie przez wagi, które Klaudia zrobiła w punkcie 3.2.
+#| label: prognoza-skladnikow
+#| echo: true
+#| fig-cap: "Prognozowanie składników diagnostycznych."
+#| warning: false
+
+components = ['market_price', 'energy_consumption', 'res_share',
+              'system_stability', 'fossil_share', 'price_volatility']
+steps_ahead = 24
+component_forecasts = {}
+
+# Prognozowanie 6 powyższych zmiennych diagnostycznych 
+for var in components:
+    train, test = df[var].iloc[:-steps_ahead], df[var].iloc[-steps_ahead:]
+    pred, model_name = best_time_model(train, steps_ahead)
+    component_forecasts[var] = pred
+    print(f"{var}: najlepszy model -> {model_name}")
+
+```
+    
+
+
+```{python}
+
+#| label: dopasowanie-treningowe
+#| echo: true
+#| fig-cap: "Dopasowanie modeli do danych treningowych."
+#| warning: false
+
+# Wizualizacja dopasowania modeli do danych treningowych
+for var in components:
+    train = df[var].iloc[:-steps_ahead]
+    pred, model_name = best_time_model(train, steps_ahead)
+
+    fitted = None
+    try:
+        if model_name == 'OLS trend+sezon':
+            X = np.arange(len(train))
+            dummies = pd.get_dummies(train.index.month, prefix='M')
+            X_mat = np.column_stack([X, dummies.values])
+            model = sm.OLS(train.values, sm.add_constant(X_mat)).fit()
+            fitted = pd.Series(model.fittedvalues, index=train.index)
+
+        elif model_name == 'Holt-Winters':
+            model = ExponentialSmoothing(train, trend='add', seasonal='add', seasonal_periods=12).fit()
+            fitted = pd.Series(model.fittedvalues, index=train.index)
+
+        elif model_name == 'SARIMA':
+            model = SARIMAX(train, order=(1,1,1), seasonal_order=(1,1,1,12),
+                            enforce_stationarity=False, enforce_invertibility=False).fit(disp=False)
+            fitted = pd.Series(model.fittedvalues, index=train.index)
+
+        elif model_name == 'ETS':
+            model = ExponentialSmoothing(train, trend='add', seasonal='add',
+                                         seasonal_periods=12, damped_trend=True).fit()
+            fitted = pd.Series(model.fittedvalues, index=train.index)
+
+    except Exception as e:
+        print(f"Nie udało się uzyskać dopasowania dla {var}: {e}")
+
+    plt.figure(figsize=(9,3))
+    plt.plot(train.index, train, label='rzeczywiste', lw=2)
+    if fitted is not None:
+        plt.plot(fitted.index, fitted, 'b--', label='dopasowanie (train)', lw=2)
+    plt.title(f'{var} – dopasowanie modelu ({model_name})')
+    plt.legend(); plt.grid(alpha=0.3)
+    plt.show()
+
+```
+
+
+Dopasowanie modeli do danych historycznych dla poszczególnych składników indeksów syntetycznych okazało się trafne i stabilne. Modele wygładzające (**Holt-Winters**) dobrze odwzorowały sezonowość i trend w zmiennych takich jak **energy_consumption**, **res_share** czy **fossil_share**. Z kolei modele SARIMA skutecznie uchwyciły zmienność i fluktuacje w składnikach takich jak **market_price** i **price_volatility**, szczególnie w okresie *2021–2023*. Model ETS zastosowany dla **system_stability** zapewnił stabilne dopasowanie przy niskiej amplitudzie danych.
+
+Zaobserwowana zgodność pomiędzy wartościami rzeczywistymi a dopasowanymi w okresie treningowym wskazuje na wysoką adekwatność zastosowanych modeli prognostycznych względem charakterystyki poszczególnych zmiennych diagnostycznych. Brak istotnych odchyleń systematycznych oraz skuteczne odwzorowanie trendów i sezonowości potwierdzają, że procedura modelowania została przeprowadzona w sposób metodycznie uzasadniony.
+
+W konsekwencji, podejście składnikowe – polegające na indywidualnym prognozowaniu komponentów i ich późniejszej agregacji – można uznać za statystycznie uzasadnione i prognostycznie stabilne. Stanowi ono wiarygodną podstawę do dalszej rekonstrukcji indeksów syntetycznych, zarówno w kontekście analizy porównawczej, jak i zastosowań decyzyjnych. 
+
+```{python}
+#| label: agregacja-indeksów
+#| echo: true
+#| fig-cap: "Przygotowanie prognoz składników i rekonstrukcja indeksów syntetycznych"
+#| warning: false
+
+# DataFrame z prognozami składników
+forecast_df = pd.DataFrame(component_forecasts, index=test.index)
+
+# Standaryzacja prognoz (dla EW i PCA)
+scaler_std = StandardScaler().fit(df[components].iloc[:-steps_ahead])
+forecast_std = pd.DataFrame(scaler_std.transform(forecast_df),
+                            columns=forecast_df.columns, index=forecast_df.index)
+
+# Normalizacja prognoz (dla EWM)
+scaler_minmax = MinMaxScaler().fit(df[components].iloc[:-steps_ahead])
+forecast_norm = pd.DataFrame(scaler_minmax.transform(forecast_df),
+                             columns=forecast_df.columns, index=forecast_df.index)
+
+# Wagi
+weights_ew = np.ones(len(components)) / len(components)
+pca = PCA(n_components=1).fit(scaler_std.transform(df[components].iloc[:-steps_ahead]))
+ewm_weights = np.array([0.2473,0.1956,0.0433,0.0889,0.3239,0.1009])  
+
+
+# Składanie indeksów
+idx_ew_forecast = forecast_std.dot(weights_ew)
+idx_pca_forecast = pd.Series(pca.transform(forecast_std).flatten(), index=forecast_std.index)
+idx_ewm_forecast = forecast_norm.dot(ewm_weights)
+
+```
+
+Podejście składnikowe („od dołu do góry”) polega na prognozowaniu każdej zmiennej diagnostycznej osobno, a następnie rekonstrukcji indeksów syntetycznych na podstawie wag wyliczonych w sekcji 3.2. Dzięki temu możliwe jest indywidualne dopasowanie modelu do charakterystyki każdej zmiennej – np. dla stabilnych składników (takich jak **energy_consumption** czy **fossil_share**) zastosowano modele wygładzające (**Holt-Winters**), natomiast dla bardziej zmiennych (np. **market_price**, **price_volatility**) lepiej sprawdziły się modele SARIMA.
+
+Po uzyskaniu prognoz dla wszystkich składników, zostały one przekształcone zgodnie z metodologią konstrukcji indeksów: standaryzacja dla EW i PCA, normalizacja dla EWM, a następnie agregacja z użyciem odpowiednich wag. W efekcie otrzymano prognozy składnikowe dla indeksów syntetycznych, które zostały porównane z wartościami rzeczywistymi w okresie testowym (24 miesiące).
+
+
+```{python}
+
+#| label: prognoza-skladnikow-i-agregacja-wyniki
+#| echo: true
+#| fig-cap: "Prognoza składników i rekonstrukcja indeksów syntetycznych - wykresy."
+#| warning: false
+
+
+# Wykresy porównawcze
+plt.figure(figsize=(11,4))
+plt.plot(idx_ew[-steps_ahead:], label='EW - rzeczywisty', lw=2)
+plt.plot(idx_ew_forecast.index, idx_ew_forecast, 'r--', label='EW - prognoza składnikowa', lw=2)
+plt.legend(); plt.grid(alpha=0.3); plt.title('Indeks EW – podejście składnikowe'); plt.show()
+
+plt.figure(figsize=(11,4))
+plt.plot(idx_pca[-steps_ahead:], label='PCA - rzeczywisty', lw=2)
+plt.plot(idx_pca_forecast.index, idx_pca_forecast, 'r--', label='PCA - prognoza składnikowa', lw=2)
+plt.legend(); plt.grid(alpha=0.3); plt.title('Indeks PCA – podejście składnikowe'); plt.show()
+
+plt.figure(figsize=(11,4))
+plt.plot(idx_ewm[-steps_ahead:], label='EWM - rzeczywisty', lw=2)
+plt.plot(idx_ewm_forecast.index, idx_ewm_forecast, 'r--', label='EWM - prognoza składnikowa', lw=2)
+plt.legend(); plt.grid(alpha=0.3); plt.title('Indeks EWM – podejście składnikowe'); plt.show()
+
+# Ocena jakości prognoz składnikowych
+aggregated_metrics = {}
+for met, idx_pred, idx_actual in zip(['EW','PCA','EWM'],
+                                     [idx_ew_forecast, idx_pca_forecast, idx_ewm_forecast],
+                                     [idx_ew[-steps_ahead:], idx_pca[-steps_ahead:], idx_ewm[-steps_ahead:]]):
+    metrics = eval_metrics(idx_actual.values, idx_pred.values)
+    aggregated_metrics[met] = {'Model':'Składnikowa', **{k: round(v,4) for k,v in metrics.items()}}
+    print(f"\n{met} – podejście składnikowe: {metrics}")
+
+# Tabela wyników
+print('\n===============================')
+print('PODSUMOWANIE MIAR TRAFNOŚCI PROGNOZ (OKRES TESTOWY - Prognoza składnikowa):')
+aggregated_metrics_df = pd.DataFrame(aggregated_metrics).T
+display(aggregated_metrics_df)
+
+``` 
+
+*Wyniki miar trafności wskazują, że:*
+
+**Indeks EW** osiągnął bardzo wysokie błędy względne **(MAPE = 228%, RMSPE = 245%)**, a współczynnik Theila przekroczył wartość 1 **(Theil = 1.40)**, co oznacza, że prognoza była gorsza niż prognoza naiwna. Równe wagi nie zrównoważyły wpływu zmiennych o dużej zmienności, co pogorszyło trafność.
+
+**Indeks PCA** charakteryzował się największymi błędami bezwzględnymi **(MAE = 1.21, RMSE = 1.38)**, co wynika z większej skali indeksu. Mimo to, współczynnik Theila był niższy niż dla EW **(Theil = 0.64)**, co wskazuje na lepsze dopasowanie. PCA lepiej oddało strukturę współzależności między składnikami, ale nie zredukowało błędów względnych.
+
+**Indeks EWM** uzyskał najlepsze wyniki: najniższe błędy bezwzględne **(MAE = 0.33, RMSE = 0.34)**, najniższe błędy względne **(MAPE = 56.6%, RMSPE = 58.8%)** oraz najniższy współczynnik Theila **(Theil = 0.59)**. Wagi entropowe skutecznie zrównoważyły wpływ składników, nadając większe znaczenie zmiennym o wysokiej informacyjności i stabilności.
 
 ## 3.5. Analiza porównawcza i Wnioski (Wspólne)
 Opis: Zestawienie wyników z punktu 3.3 i 3.4. Tabela porównująca błędy (np. RMSE) dla obu podejść. Wskazanie zwycięskiej metody dla każdego typu indeksu.
