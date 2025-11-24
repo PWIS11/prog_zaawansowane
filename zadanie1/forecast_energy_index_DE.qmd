@@ -533,18 +533,33 @@ To podejście alternatywne ("od dołu do góry"). Zamiast prognozować gotowy in
 #| echo: true
 #| fig-cap: "Prognozowanie składników diagnostycznych."
 #| warning: false
+#| 
 
-components = ['market_price', 'energy_consumption', 'res_share',
-              'system_stability', 'fossil_share', 'price_volatility']
+components = diagnostic_vars
 steps_ahead = 24
-component_forecasts = {}
 
-# Prognozowanie 6 powyższych zmiennych diagnostycznych 
+# Prognozowanie 6 zmiennych diagnostycznych 
+component_forecasts = {}
 for var in components:
     train, test = df[var].iloc[:-steps_ahead], df[var].iloc[-steps_ahead:]
     pred, model_name = best_time_model(train, steps_ahead)
     component_forecasts[var] = pred
     print(f"{var}: najlepszy model -> {model_name}")
+
+# Dane prognozowane 
+df_fc_comps = pd.DataFrame(component_forecasts, index=df.index[-steps_ahead:])
+
+# Dane treningowe
+df_train_raw = df[components].iloc[:-steps_ahead]
+
+# 1. Standaryzacja prognoz
+scaler_agg = StandardScaler().fit(df_train_raw)
+df_fc_std = pd.DataFrame(scaler_agg.transform(df_fc_comps),
+                         columns=components, index=df_fc_comps.index)
+
+# 2. Odwrócenie destymulant (dla EW i PCA)
+df_fc_std_adj = df_fc_std.copy()
+df_fc_std_adj[destymulanty] = df_fc_std_adj[destymulanty] * -1
 
 ```
     
@@ -598,12 +613,15 @@ for var in components:
 
 ```
 
+Dobór modeli prognostycznych dla zmiennych diagnostycznych składających się na syntetyczny indeks rozwoju sektora energetycznego został przeprowadzony w sposób metodycznie uzasadniony i statystycznie trafny. Każda zmienna została poddana indywidualnej analizie charakterystyki czasowej, co umożliwiło selekcję modelu optymalnie dopasowanego do jej struktury trendu, sezonowości oraz poziomu zmienności.
 
-Dopasowanie modeli do danych historycznych dla poszczególnych składników indeksów syntetycznych okazało się trafne i stabilne. Modele wygładzające (**Holt-Winters**) dobrze odwzorowały sezonowość i trend w zmiennych takich jak **energy_consumption**, **res_share** czy **fossil_share**. Z kolei modele SARIMA skutecznie uchwyciły zmienność i fluktuacje w składnikach takich jak **market_price** i **price_volatility**, szczególnie w okresie *2021–2023*. Model ETS zastosowany dla **system_stability** zapewnił stabilne dopasowanie przy niskiej amplitudzie danych.
+W przypadku zmiennych o wyraźnej sezonowości i stabilnym przebiegu – takich jak **res_share**, **fossil_share** oraz **energy_consumption** – zastosowanie modeli wygładzających typu **Holt-Winters** okazało się w pełni zasadne. Modele te skutecznie uchwyciły zarówno komponent trendu, jak i cykliczność roczną, zapewniając wysoką zgodność dopasowania w okresie treningowym.
 
-Zaobserwowana zgodność pomiędzy wartościami rzeczywistymi a dopasowanymi w okresie treningowym wskazuje na wysoką adekwatność zastosowanych modeli prognostycznych względem charakterystyki poszczególnych zmiennych diagnostycznych. Brak istotnych odchyleń systematycznych oraz skuteczne odwzorowanie trendów i sezonowości potwierdzają, że procedura modelowania została przeprowadzona w sposób metodycznie uzasadniony.
+Dla zmiennych charakteryzujących się podwyższoną zmiennością i podatnością na szoki egzogeniczne – w szczególności **market_price** oraz **price_volatility** – zastosowano modele klasy **SARIMA**, które wykazały zdolność do odwzorowania nieregularnych fluktuacji, zwłaszcza w latach *2021–2023*, tj. w okresie kryzysu energetycznego. Modele te wykazały wysoką responsywność względem ekstremalnych wartości, zachowując jednocześnie stabilność estymacji.
 
-W konsekwencji, podejście składnikowe – polegające na indywidualnym prognozowaniu komponentów i ich późniejszej agregacji – można uznać za statystycznie uzasadnione i prognostycznie stabilne. Stanowi ono wiarygodną podstawę do dalszej rekonstrukcji indeksów syntetycznych, zarówno w kontekście analizy porównawczej, jak i zastosowań decyzyjnych. 
+Zmienna **system_stability**, o ograniczonej amplitudzie i niskiej sezonowości, została skutecznie odwzorowana za pomocą modelu **ETS** z tłumionym trendem. Dopasowanie charakteryzowało się niskim poziomem błędu oraz wysoką zgodnością strukturalną, co potwierdza adekwatność zastosowanego podejścia.
+
+Analiza dopasowania wykazała brak istotnych odchyleń systematycznych oraz wysoką zgodność pomiędzy wartościami rzeczywistymi a estymowanymi. Wskazuje to na poprawność zarówno procesu selekcji modeli, jak i ich kalibracji. Podejście składnikowe, polegające na indywidualnym modelowaniu każdej zmiennej diagnostycznej, należy uznać za statystycznie uzasadnione i prognostycznie stabilne. Stanowi ono solidną podstawę do dalszej rekonstrukcji syntetycznych indeksów rozwoju, zarówno w kontekście analiz porównawczych, jak i aplikacji decyzyjnych w obszarze polityki energetycznej.
 
 ```{python}
 #| label: agregacja-indeksów
@@ -611,29 +629,37 @@ W konsekwencji, podejście składnikowe – polegające na indywidualnym prognoz
 #| fig-cap: "Przygotowanie prognoz składników i rekonstrukcja indeksów syntetycznych"
 #| warning: false
 
-# DataFrame z prognozami składników
-forecast_df = pd.DataFrame(component_forecasts, index=test.index)
 
-# Standaryzacja prognoz (dla EW i PCA)
-scaler_std = StandardScaler().fit(df[components].iloc[:-steps_ahead])
+# 1. Dane prognozowane – odwrócenie destymulant
+forecast_df = pd.DataFrame(component_forecasts, index=test.index)
+forecast_df[destymulanty] = forecast_df[destymulanty] * -1
+
+# 2.Dane treningowe – odwrócenie destymulant
+trainmodulacja = df[components].iloc[:-steps_ahead].copy()
+trainmodulacja[destymulanty] = trainmodulacja[destymulanty] * -1
+
+# 3. Standaryzacja prognoz (dla EW i PCA)
+scaler_std = StandardScaler().fit(trainmodulacja)
 forecast_std = pd.DataFrame(scaler_std.transform(forecast_df),
                             columns=forecast_df.columns, index=forecast_df.index)
 
-# Normalizacja prognoz (dla EWM)
-scaler_minmax = MinMaxScaler().fit(df[components].iloc[:-steps_ahead])
+# 4. Normalizacja prognoz (dla EWM)
+scaler_minmax = MinMaxScaler().fit(trainmodulacja)
 forecast_norm = pd.DataFrame(scaler_minmax.transform(forecast_df),
                              columns=forecast_df.columns, index=forecast_df.index)
 
 # Wagi
 weights_ew = np.ones(len(components)) / len(components)
-pca = PCA(n_components=1).fit(scaler_std.transform(df[components].iloc[:-steps_ahead]))
-ewm_weights = np.array([0.2473,0.1956,0.0433,0.0889,0.3239,0.1009])  
-
+pca = PCA(n_components=1).fit(scaler_std.transform(trainmodulacja))
+weights_ewm = pd.Series(d / d.sum(), index=components).round(4)
 
 # Składanie indeksów
 idx_ew_forecast = forecast_std.dot(weights_ew)
-idx_pca_forecast = pd.Series(pca.transform(forecast_std).flatten(), index=forecast_std.index)
-idx_ewm_forecast = forecast_norm.dot(ewm_weights)
+idx_pca_forecast = pd.Series(
+    pca.transform(forecast_std.values).flatten(),
+    index=forecast_std.index
+)
+idx_ewm_forecast = forecast_norm.dot(weights_ewm)
 
 ```
 
@@ -685,11 +711,11 @@ display(aggregated_metrics_df)
 
 *Wyniki miar trafności wskazują, że:*
 
-**Indeks EW** osiągnął bardzo wysokie błędy względne **(MAPE = 228%, RMSPE = 245%)**, a współczynnik Theila przekroczył wartość 1 **(Theil = 1.40)**, co oznacza, że prognoza była gorsza niż prognoza naiwna. Równe wagi nie zrównoważyły wpływu zmiennych o dużej zmienności, co pogorszyło trafność.
+**Indeks EW** wykazał istotne ograniczenia prognostyczne, czego dowodem są skrajnie wysokie błędy względne **(MAPE = 247.81%, RMSPE = 179.07%)** oraz współczynnik Theila przekraczający wartość graniczną **(Theil = 1.0185)**. Oznacza to, że prognoza składnikowa oparta na równych wagach była mniej trafna niż prognoza naiwna. Brak mechanizmu różnicującego wpływ zmiennych o wysokiej zmienności sprawił, że indeks EW był szczególnie podatny na zakłócenia generowane przez niestabilne składniki.
 
-**Indeks PCA** charakteryzował się największymi błędami bezwzględnymi **(MAE = 1.21, RMSE = 1.38)**, co wynika z większej skali indeksu. Mimo to, współczynnik Theila był niższy niż dla EW **(Theil = 0.64)**, co wskazuje na lepsze dopasowanie. PCA lepiej oddało strukturę współzależności między składnikami, ale nie zredukowało błędów względnych.
+**Indeks PCA** osiągnął najwyższe błędy bezwzględne **(MAE = 1.2314, RMSE = 1.3792)**, co wynika z większej skali wartości generowanych przez pierwszą składową główną. Niemniej jednak, współczynnik Theila był wyraźnie niższy niż dla EW **(Theil = 0.6431)**, co wskazuje na lepsze odwzorowanie struktury współzależności między zmiennymi. Mimo to, wysoki poziom błędów względnych **(MAPE = 270.78%, RMSPE = 78.16%)** świadczy o ograniczonej zdolności PCA do tłumienia wpływu ekstremalnych wartości w warunkach wysokiej zmienności.
 
-**Indeks EWM** uzyskał najlepsze wyniki: najniższe błędy bezwzględne **(MAE = 0.33, RMSE = 0.34)**, najniższe błędy względne **(MAPE = 56.6%, RMSPE = 58.8%)** oraz najniższy współczynnik Theila **(Theil = 0.59)**. Wagi entropowe skutecznie zrównoważyły wpływ składników, nadając większe znaczenie zmiennym o wysokiej informacyjności i stabilności.
+**Indeks EWM** okazał się zdecydowanie najbardziej trafnym wariantem syntetycznego miernika. Zarówno błędy bezwzględne **(MAE = 0.0571, RMSE = 0.0707)**, jak i względne **(MAPE = 10.49%, RMSPE = 12.32%)** były najniższe spośród wszystkich analizowanych metod. Współczynnik Theila **(0.1254)** potwierdza wysoką jakość dopasowania. Zastosowanie wag entropowych umożliwiło efektywne zrównoważenie wpływu składników, nadając większe znaczenie zmiennym o wysokiej informacyjności i stabilnym przebiegu, co przełożyło się na wysoką trafność prognozy.
 
 ## 3.5. Analiza porównawcza i Wnioski (Wspólne)
 Opis: Zestawienie wyników z punktu 3.3 i 3.4. Tabela porównująca błędy (np. RMSE) dla obu podejść. Wskazanie zwycięskiej metody dla każdego typu indeksu.
