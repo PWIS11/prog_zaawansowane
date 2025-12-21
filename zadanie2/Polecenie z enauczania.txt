@@ -1,0 +1,6 @@
+Otwarcie: sobota, 20.12.2025, 00:00 AM
+Wymagane do: sobota, 31.01.2026, 00:00 AM
+
+Zespół rozwiązuje i przesyła do oceny jedno zadanie wg swoich preferencji (punkty 3-7). Rozwiązaniem zadania jest raport w pliku pdf (wykonany wg kryteriów z danego typu zadania) z wizualizacją (wykresy i tabele),  obliczeniami wykonanymi w kodzie Python (lub R) oraz plikiem xlsx lub csv z danymi źródłowymi. Kod można dostarczyć jako link do GitHuba (na końcu pdf), skrypt .py lub notatnik do Google Colab. 
+
+Możliwość wykorzystania GenAI tylko do operacji na kodzie.
