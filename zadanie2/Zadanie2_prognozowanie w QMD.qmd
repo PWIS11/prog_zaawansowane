@@ -211,10 +211,10 @@ def make_forecast(data, column_name, periods=24):
     forecast = model.forecast(periods)
     return forecast
 
-# A. Prognoza dla OBIEKTU (dst) - Zużycie Energii
+# A. Prognoza dla OBIEKTU - Zużycie Energii
 forecast_energy = make_forecast(df, 'energy_consumption')
 
-# B. Prognoza dla OTOCZENIA (dst+) - Cena Rynkowa
+# B. Prognoza dla OTOCZENIA - Cena Rynkowa
 # Cena jest kluczowa dla budowania scenariuszy (szok cenowy vs stabilizacja)
 forecast_price = make_forecast(df, 'market_price')
 
